@@ -1423,6 +1423,7 @@ dependencies = [
  "smol",
  "smol-hyper",
  "strum",
+ "uuid",
  "wayvr-ipc",
  "wgui",
  "wlx-common",
