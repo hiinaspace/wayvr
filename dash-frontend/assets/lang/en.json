@@ -136,6 +136,7 @@
 		"VOLUME": "Volume"
 	},
 	"CLOSE_WINDOW": "Close window",
+	"CREATION_DATE": "Creation date",
 	"DEBUG_INFO": "Debug info",
 	"DISPLAY_BRIGHTNESS": "Display brightness",
 	"FAILED_TO_LAUNCH_APPLICATION": "Failed to launch a application:",
@@ -151,6 +152,7 @@
 	"HELLO_USER": "Hello, {USER}!",
 	"HIDE": "Hide",
 	"HOME_SCREEN": "Home",
+	"MODIFICATION_DATE": "Modification date",
 	"MONADO_RUNTIME": "Monado runtime",
 	"LOADING": "Loading...",
 	"POPUP_ADD_DISPLAY": {
@@ -166,5 +168,6 @@
 	"SETTINGS": "Settings",
 	"SHOW": "Show",
 	"TERMINATE_PROCESS": "Terminate process",
+	"VERSION": "Version",
 	"WIDTH": "Width"
 }
