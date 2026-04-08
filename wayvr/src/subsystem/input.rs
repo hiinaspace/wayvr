@@ -57,21 +57,26 @@ impl HidWrapper {
         stylus_button_prev: bool,
         stylus_button2: bool,
         stylus_button2_prev: bool,
-    ) {
+    ) -> bool {
         if !self.tablet_mode {
-            return;
+            return false;
         }
 
         let Some(tablet) = self.tablet.as_mut() else {
-            return;
+            return false;
         };
+
+        let mut changed = false;
 
         if stylus_button != stylus_button_prev {
             tablet.stylus_button(0, stylus_button);
+            changed = true;
         }
         if stylus_button2 != stylus_button2_prev {
             tablet.stylus_button(1, stylus_button2);
+            changed = true;
         }
+        changed
     }
 
     pub fn send_key_routed(

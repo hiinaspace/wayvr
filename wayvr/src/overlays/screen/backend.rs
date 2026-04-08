@@ -29,9 +29,13 @@ static START: LazyLock<Instant> = LazyLock::new(Instant::now);
 static NEXT_MOVE: AtomicU64 = AtomicU64::new(0);
 
 #[cfg(feature = "tablet")]
-const TABLET_PRESSURE_FRONT_GATE: f32 = 0.10;
+const TABLET_PRESSURE_FRONT_GATE: f32 = 0.03;
 #[cfg(feature = "tablet")]
-const TABLET_REAR_HOLD_DEPTH: f32 = 0.10;
+const TABLET_DRAW_HAPTIC: crate::backend::input::Haptics = crate::backend::input::Haptics {
+    intensity: 0.2,
+    duration: 0.03,
+    frequency: 20.0,
+};
 
 fn can_move() -> bool {
     START.elapsed().as_millis() as u64 > NEXT_MOVE.load(std::sync::atomic::Ordering::Relaxed)
@@ -54,20 +58,31 @@ fn trigger_pressure(raw: f32, threshold: f32) -> f32 {
 }
 
 #[cfg(feature = "tablet")]
-fn depth_pressure(signed_depth: f32) -> f32 {
+fn depth_pressure(
+    signed_depth: f32,
+    drawing_latched: bool,
+    crossed_behind_surface: bool,
+) -> (f32, bool, bool) {
+    if drawing_latched && crossed_behind_surface {
+        if signed_depth > TABLET_PRESSURE_FRONT_GATE {
+            return (0.0, false, false);
+        }
+        return (1.0, true, true);
+    }
+
     if signed_depth > TABLET_PRESSURE_FRONT_GATE {
-        return 0.0;
+        return (0.0, false, false);
     }
 
     if signed_depth >= 0.0 {
-        return (1.0 - signed_depth / TABLET_PRESSURE_FRONT_GATE).clamp(0.0, 1.0);
+        return (
+            (1.0 - signed_depth / TABLET_PRESSURE_FRONT_GATE).clamp(0.0, 1.0),
+            drawing_latched || signed_depth < TABLET_PRESSURE_FRONT_GATE,
+            crossed_behind_surface,
+        );
     }
 
-    if signed_depth < -TABLET_REAR_HOLD_DEPTH {
-        return 0.0;
-    }
-
-    1.0
+    (1.0, true, true)
 }
 
 pub(super) enum CaptureType {
@@ -337,14 +352,30 @@ impl OverlayBackend for ScreenBackend {
         if app.hid_provider.tablet_mode {
             let threshold = app.session.config.tablet_pressure_threshold;
             let trigger = app.input_state.pointers[hit.pointer].now.trigger_value;
-            let (pressure_mode, pressure, proximity, depth) =
+            let tablet_state = &mut app.tablet_state[hit.pointer];
+            let previous_pressure = tablet_state.last_pressure;
+            let (
+                pressure_mode,
+                pressure,
+                proximity,
+                depth,
+                drawing_latched,
+                crossed_behind_surface,
+            ) =
                 if app.session.config.tablet_pressure_from_depth {
                     if let Some(signed_depth) = hit.signed_depth {
+                        let (pressure, drawing_latched, crossed_behind_surface) = depth_pressure(
+                            signed_depth,
+                            tablet_state.drawing_latched,
+                            tablet_state.crossed_behind_surface,
+                        );
                         (
                             crate::state::TabletPressureMode::Depth,
-                            depth_pressure(signed_depth),
+                            pressure,
                             true,
                             Some(signed_depth),
+                            drawing_latched,
+                            crossed_behind_surface,
                         )
                     } else {
                         (
@@ -352,6 +383,8 @@ impl OverlayBackend for ScreenBackend {
                             trigger_pressure(trigger, threshold),
                             true,
                             None,
+                            false,
+                            false,
                         )
                     }
                 } else {
@@ -360,18 +393,30 @@ impl OverlayBackend for ScreenBackend {
                         trigger_pressure(trigger, threshold),
                         true,
                         None,
+                        false,
+                        false,
                     )
                 };
+
+            tablet_state.drawing_latched = drawing_latched;
+            tablet_state.crossed_behind_surface = crossed_behind_surface;
+            tablet_state.last_pressure = pressure;
+            tablet_state.last_uv = Some(hit.uv);
 
             app.tablet_debug[hit.pointer] = crate::state::TabletDebugState {
                 active: true,
                 pressure_mode,
                 proximity,
+                drawing_latched,
                 pressure,
                 uv: Some(hit.uv),
                 tilt: hit.tilt,
                 depth,
             };
+
+            if pressure > 0.0 && previous_pressure <= 0.0 {
+                app.input_state.pointers[hit.pointer].pending_haptics = Some(TABLET_DRAW_HAPTIC);
+            }
 
             if let Some(tablet) = app.hid_provider.tablet.as_mut() {
                 if proximity {
@@ -441,6 +486,7 @@ impl OverlayBackend for ScreenBackend {
     fn on_left(&mut self, app: &mut AppState, _hand: usize) {
         #[cfg(feature = "tablet")]
         if app.hid_provider.tablet_mode {
+            app.tablet_state[_hand] = crate::state::TabletState::default();
             app.tablet_debug[_hand] = crate::state::TabletDebugState::default();
             if let Some(tablet) = app.hid_provider.tablet.as_mut() {
                 tablet.on_left();

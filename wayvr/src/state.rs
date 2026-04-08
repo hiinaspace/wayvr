@@ -56,6 +56,8 @@ pub struct AppState {
     pub anchor: Affine3A,
     pub anchor_grabbed: bool,
     #[cfg(feature = "tablet")]
+    pub tablet_state: [TabletState; 2],
+    #[cfg(feature = "tablet")]
     pub tablet_debug: [TabletDebugState; 2],
 
     pub wgui_globals: WguiGlobals,
@@ -90,10 +92,20 @@ pub enum TabletPressureMode {
 
 #[cfg(feature = "tablet")]
 #[derive(Clone, Copy, Default)]
+pub struct TabletState {
+    pub drawing_latched: bool,
+    pub crossed_behind_surface: bool,
+    pub last_pressure: f32,
+    pub last_uv: Option<Vec2>,
+}
+
+#[cfg(feature = "tablet")]
+#[derive(Clone, Copy, Default)]
 pub struct TabletDebugState {
     pub active: bool,
     pub pressure_mode: TabletPressureMode,
     pub proximity: bool,
+    pub drawing_latched: bool,
     pub pressure: f32,
     pub uv: Option<Vec2>,
     pub tilt: Vec2,
@@ -204,6 +216,8 @@ impl AppState {
             screens: smallvec![],
             anchor: Affine3A::IDENTITY,
             anchor_grabbed: false,
+            #[cfg(feature = "tablet")]
+            tablet_state: [TabletState::default(), TabletState::default()],
             #[cfg(feature = "tablet")]
             tablet_debug: [TabletDebugState::default(), TabletDebugState::default()],
             wgui_globals: WguiGlobals::new(

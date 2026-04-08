@@ -436,6 +436,11 @@ where
 
     let hovered_id = pointer.interaction.hovered_id.take();
     let (Some((mut hit, raw_hit)), haptics) = get_nearest_hit(idx, overlays, app) else {
+        #[cfg(feature = "tablet")]
+        if let Some(latched_hit) = get_latched_tablet_hit(idx, hovered_id, overlays, app) {
+            return (Some(latched_hit), pending_haptics);
+        }
+
         handle_no_hit(idx, hovered_id, overlays, app);
         return (None, pending_haptics); // no hit
     };
@@ -544,6 +549,71 @@ where
     }
 
     (Some((hit, raw_hit)), haptics.or(pending_haptics))
+}
+
+#[cfg(feature = "tablet")]
+fn get_latched_tablet_hit<O>(
+    pointer_idx: usize,
+    hovered_id: Option<OverlayID>,
+    overlays: &mut OverlayWindowManager<O>,
+    app: &mut AppState,
+) -> Option<(PointerHit, RayHit)>
+where
+    O: Default,
+{
+    if !app.hid_provider.tablet_mode {
+        return None;
+    }
+
+    let tablet_state = app.tablet_state[pointer_idx];
+    if !tablet_state.drawing_latched {
+        return None;
+    }
+
+    let overlay_id = hovered_id?;
+    let mode = app.input_state.pointers[pointer_idx].interaction.mode;
+    let overlay = overlays.mut_by_id(overlay_id)?;
+    let overlay_state = overlay.config.active_state.as_ref()?;
+    let interaction_transform = overlay.config.backend.as_mut().get_interaction_transform()?;
+    let pointer_pose = app.input_state.pointers[pointer_idx].pose;
+    let projected_local_pos = overlay_state
+        .transform
+        .inverse()
+        .transform_point3a(pointer_pose.translation)
+        .xy();
+    let uv = interaction_transform
+        .transform_point2(projected_local_pos)
+        .clamp(Vec2::ZERO, Vec2::ONE);
+    let tilt = ray_tilt(&pointer_pose, &overlay_state.transform);
+    let signed_depth = point_plane_depth(&pointer_pose, &overlay_state.transform);
+    let raw_hit = RayHit {
+        overlay: overlay_id,
+        global_pos: overlay_state
+            .transform
+            .transform_point3a(projected_local_pos.extend(0.0).into()),
+        local_pos: projected_local_pos,
+        dist: 0.0,
+        tilt,
+        signed_depth: Some(signed_depth),
+    };
+    let pointer_hit = PointerHit {
+        pointer: pointer_idx,
+        overlay: overlay_id,
+        mode,
+        primary: false,
+        uv,
+        tilt,
+        signed_depth: Some(signed_depth),
+    };
+
+    let result = overlay.config.backend.on_hover(app, &pointer_hit);
+    if result.consume || overlay.config.editing {
+        app.input_state.pointers[pointer_idx].interaction.hovered_id = Some(overlay_id);
+        overlay.hover_pointers[pointer_idx] = true;
+        return Some((pointer_hit, raw_hit));
+    }
+
+    None
 }
 
 fn handle_no_hit<O>(

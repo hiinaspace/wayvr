@@ -40,6 +40,13 @@ use crate::{
     },
 };
 
+#[cfg(feature = "tablet")]
+const TABLET_BUTTON_HAPTIC: crate::backend::input::Haptics = crate::backend::input::Haptics {
+    intensity: 0.1,
+    duration: 0.02,
+    frequency: 12.0,
+};
+
 pub mod helpers;
 pub mod input;
 pub mod lines;
@@ -256,7 +263,7 @@ pub fn openvr_run(show_by_default: bool, headless: bool) -> Result<(), BackendEr
         input_source.update(universe.clone(), &mut input_mgr, &mut system_mgr, &mut app);
         app.input_state.post_update(&app.session);
         #[cfg(feature = "tablet")]
-        app.hid_provider.update_tablet_buttons(
+        let tablet_buttons_changed = app.hid_provider.update_tablet_buttons(
             app.input_state
                 .pointers
                 .iter()
@@ -274,6 +281,18 @@ pub fn openvr_run(show_by_default: bool, headless: bool) -> Result<(), BackendEr
                 .iter()
                 .any(|p| p.before.click_modifier_right),
         );
+        #[cfg(feature = "tablet")]
+        if app.hid_provider.tablet_mode && tablet_buttons_changed {
+            for pointer in &mut app.input_state.pointers {
+                let pressed_middle =
+                    pointer.now.click_modifier_middle && !pointer.before.click_modifier_middle;
+                let pressed_right =
+                    pointer.now.click_modifier_right && !pointer.before.click_modifier_right;
+                if pressed_middle || pressed_right {
+                    pointer.pending_haptics = Some(TABLET_BUTTON_HAPTIC);
+                }
+            }
+        }
 
         if app
             .input_state

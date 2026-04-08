@@ -327,9 +327,10 @@ fn tablet_status_on_tick(
                 .map(|depth| format!("{depth:+.3}m"))
                 .unwrap_or_else(|| "--".into());
             format!(
-                "{hand} {} prox={} p={:.2} uv={uv} tilt={:+.0}/{:+.0} depth={depth} btn={}/{}",
+                "{hand} {} prox={} draw={} p={:.2} uv={uv} tilt={:+.0}/{:+.0} depth={depth} btn={}/{}",
                 mode,
                 if state.proximity { 1 } else { 0 },
+                if state.drawing_latched { 1 } else { 0 },
                 state.pressure,
                 state.tilt.x,
                 state.tilt.y,
