@@ -279,6 +279,8 @@ pub struct PointerState {
     pub click_modifier_right: bool,
     pub click_modifier_middle: bool,
     pub move_mouse: bool,
+    /// Raw analog trigger value (0.0–1.0), used for pen pressure in tablet mode.
+    pub trigger_value: f32,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -288,6 +290,8 @@ pub struct PointerHit {
     pub mode: PointerMode,
     pub primary: bool,
     pub uv: Vec2,
+    pub tilt: Vec2,
+    pub signed_depth: Option<f32>,
 }
 
 #[derive(Clone, Copy)]
@@ -303,6 +307,8 @@ struct RayHit {
     global_pos: Vec3A,
     local_pos: Vec2,
     dist: f32,
+    tilt: Vec2,
+    signed_depth: Option<f32>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -694,6 +700,8 @@ where
             mode,
             primary: false,
             uv,
+            tilt: hit.tilt,
+            signed_depth: hit.signed_depth,
         };
 
         let result = overlay.config.backend.on_hover(app, &pointer_hit);
@@ -943,7 +951,26 @@ fn ray_test(
         global_pos: ray_origin.transform_point3a(Vec3A::NEG_Z * dist),
         local_pos,
         dist,
+        tilt: ray_tilt(ray_origin, overlay_pose),
+        signed_depth: Some(point_plane_depth(ray_origin, overlay_pose)),
     })
+}
+
+fn ray_tilt(ray_origin: &Affine3A, overlay_pose: &Affine3A) -> Vec2 {
+    let local_dir = overlay_pose
+        .inverse()
+        .transform_vector3a(ray_origin.transform_vector3a(Vec3A::NEG_Z))
+        .normalize_or_zero();
+
+    Vec2::new(
+        local_dir.x.atan2(-local_dir.z).to_degrees(),
+        local_dir.y.atan2(-local_dir.z).to_degrees(),
+    )
+}
+
+fn point_plane_depth(ray_origin: &Affine3A, overlay_pose: &Affine3A) -> f32 {
+    let plane_normal = overlay_pose.transform_vector3a(Vec3A::NEG_Z).normalize_or_zero();
+    -(ray_origin.translation - overlay_pose.translation).dot(plane_normal)
 }
 
 fn raycast_plane(

@@ -28,6 +28,11 @@ use super::capture::{ScreenPipeline, WlxCaptureIn, WlxCaptureOut, receive_callba
 static START: LazyLock<Instant> = LazyLock::new(Instant::now);
 static NEXT_MOVE: AtomicU64 = AtomicU64::new(0);
 
+#[cfg(feature = "tablet")]
+const TABLET_PRESSURE_FRONT_GATE: f32 = 0.10;
+#[cfg(feature = "tablet")]
+const TABLET_REAR_HOLD_DEPTH: f32 = 0.10;
+
 fn can_move() -> bool {
     START.elapsed().as_millis() as u64 > NEXT_MOVE.load(std::sync::atomic::Ordering::Relaxed)
 }
@@ -37,6 +42,32 @@ fn set_next_move(millis_from_now: u64) {
         START.elapsed().as_millis() as u64 + millis_from_now,
         std::sync::atomic::Ordering::Relaxed,
     );
+}
+
+#[cfg(feature = "tablet")]
+fn trigger_pressure(raw: f32, threshold: f32) -> f32 {
+    if raw < threshold {
+        0.0
+    } else {
+        ((raw - threshold) / (1.0 - threshold)).clamp(0.0, 1.0)
+    }
+}
+
+#[cfg(feature = "tablet")]
+fn depth_pressure(signed_depth: f32) -> f32 {
+    if signed_depth > TABLET_PRESSURE_FRONT_GATE {
+        return 0.0;
+    }
+
+    if signed_depth >= 0.0 {
+        return (1.0 - signed_depth / TABLET_PRESSURE_FRONT_GATE).clamp(0.0, 1.0);
+    }
+
+    if signed_depth < -TABLET_REAR_HOLD_DEPTH {
+        return 0.0;
+    }
+
+    1.0
 }
 
 pub(super) enum CaptureType {
@@ -301,6 +332,60 @@ impl OverlayBackend for ScreenBackend {
     fn on_hover(&mut self, app: &mut AppState, hit: &PointerHit) -> HoverResult {
         #[cfg(debug_assertions)]
         log::trace!("Hover: {:?}", hit.uv);
+
+        #[cfg(feature = "tablet")]
+        if app.hid_provider.tablet_mode {
+            let threshold = app.session.config.tablet_pressure_threshold;
+            let trigger = app.input_state.pointers[hit.pointer].now.trigger_value;
+            let (pressure_mode, pressure, proximity, depth) =
+                if app.session.config.tablet_pressure_from_depth {
+                    if let Some(signed_depth) = hit.signed_depth {
+                        (
+                            crate::state::TabletPressureMode::Depth,
+                            depth_pressure(signed_depth),
+                            true,
+                            Some(signed_depth),
+                        )
+                    } else {
+                        (
+                            crate::state::TabletPressureMode::TriggerFallback,
+                            trigger_pressure(trigger, threshold),
+                            true,
+                            None,
+                        )
+                    }
+                } else {
+                    (
+                        crate::state::TabletPressureMode::Trigger,
+                        trigger_pressure(trigger, threshold),
+                        true,
+                        None,
+                    )
+                };
+
+            app.tablet_debug[hit.pointer] = crate::state::TabletDebugState {
+                active: true,
+                pressure_mode,
+                proximity,
+                pressure,
+                uv: Some(hit.uv),
+                tilt: hit.tilt,
+                depth,
+            };
+
+            if let Some(tablet) = app.hid_provider.tablet.as_mut() {
+                if proximity {
+                    tablet.on_hover(hit.uv, pressure, hit.tilt);
+                } else {
+                    tablet.on_left();
+                }
+            }
+            return HoverResult {
+                consume: true,
+                ..HoverResult::default()
+            };
+        }
+
         if can_move()
             && (!app.session.config.focus_follows_mouse_mode
                 || app.input_state.pointers[hit.pointer].now.move_mouse)
@@ -315,6 +400,12 @@ impl OverlayBackend for ScreenBackend {
         }
     }
     fn on_pointer(&mut self, app: &mut AppState, hit: &PointerHit, pressed: bool) {
+        // In tablet mode, pressure-based drawing is handled in on_hover; suppress mouse clicks.
+        #[cfg(feature = "tablet")]
+        if app.hid_provider.tablet_mode {
+            return;
+        }
+
         let mut btn = match hit.mode {
             PointerMode::Right => MOUSE_RIGHT,
             PointerMode::Middle => MOUSE_MIDDLE,
@@ -347,7 +438,15 @@ impl OverlayBackend for ScreenBackend {
         app.hid_provider.inner.wheel(delta);
     }
 
-    fn on_left(&mut self, _app: &mut AppState, _hand: usize) {}
+    fn on_left(&mut self, app: &mut AppState, _hand: usize) {
+        #[cfg(feature = "tablet")]
+        if app.hid_provider.tablet_mode {
+            app.tablet_debug[_hand] = crate::state::TabletDebugState::default();
+            if let Some(tablet) = app.hid_provider.tablet.as_mut() {
+                tablet.on_left();
+            }
+        }
+    }
 
     fn get_interaction_transform(&mut self) -> Option<Affine2> {
         self.interaction_transform

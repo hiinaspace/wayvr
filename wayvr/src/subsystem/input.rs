@@ -1,5 +1,8 @@
 use super::hid::{self, HidProvider, VirtualKey};
 
+#[cfg(feature = "tablet")]
+use super::hid::tablet::TabletProvider;
+
 use crate::{backend::wayvr::WvrServerState, subsystem::hid::XkbKeymap};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -12,6 +15,9 @@ pub struct HidWrapper {
     pub keyboard_focus: KeyboardFocus,
     pub inner: Box<dyn HidProvider>,
     pub keymap: Option<XkbKeymap>,
+    #[cfg(feature = "tablet")]
+    pub tablet: Option<TabletProvider>,
+    pub tablet_mode: bool,
 }
 
 impl HidWrapper {
@@ -20,6 +26,51 @@ impl HidWrapper {
             keyboard_focus: KeyboardFocus::PhysicalScreen,
             inner: hid::initialize(),
             keymap: None,
+            #[cfg(feature = "tablet")]
+            tablet: None,
+            tablet_mode: false,
+        }
+    }
+
+    /// Initialize the virtual tablet device. Call once after config is loaded.
+    #[cfg(feature = "tablet")]
+    pub fn init_tablet(&mut self) {
+        self.tablet = TabletProvider::try_new();
+        if self.tablet.is_none() {
+            log::warn!("Tablet mode requested but virtual tablet device could not be created; falling back to mouse.");
+            self.tablet_mode = false;
+        }
+    }
+
+    pub fn set_desktop_extent(&mut self, extent: glam::Vec2) {
+        self.inner.set_desktop_extent(extent);
+    }
+
+    pub fn set_desktop_origin(&mut self, origin: glam::Vec2) {
+        self.inner.set_desktop_origin(origin);
+    }
+
+    #[cfg(feature = "tablet")]
+    pub fn update_tablet_buttons(
+        &mut self,
+        stylus_button: bool,
+        stylus_button_prev: bool,
+        stylus_button2: bool,
+        stylus_button2_prev: bool,
+    ) {
+        if !self.tablet_mode {
+            return;
+        }
+
+        let Some(tablet) = self.tablet.as_mut() else {
+            return;
+        };
+
+        if stylus_button != stylus_button_prev {
+            tablet.stylus_button(0, stylus_button);
+        }
+        if stylus_button2 != stylus_button2_prev {
+            tablet.stylus_button(1, stylus_button2);
         }
     }
 

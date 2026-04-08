@@ -19,6 +19,9 @@ pub mod wayland;
 #[cfg(feature = "x11")]
 mod x11;
 
+#[cfg(feature = "tablet")]
+pub mod tablet;
+
 pub static USE_UINPUT: AtomicBool = AtomicBool::new(true);
 
 pub(super) fn initialize() -> Box<dyn HidProvider> {

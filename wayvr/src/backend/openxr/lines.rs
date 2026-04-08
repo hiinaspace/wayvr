@@ -152,9 +152,29 @@ impl LinePool {
         let posef = helpers::transform_to_posef(&transform);
 
         line.maybe_line = Some(Line {
+            color: COLORS[color],
+            pose: posef,
+            width: LINE_WIDTH,
+            height: len,
+        });
+    }
+
+    pub(super) fn draw_dot(&mut self, id: usize, pos: Vec3A, color: [f32; 6], hmd: Affine3A) {
+        let Some(line) = self.lines.get_mut(id) else {
+            log::warn!("Line {id} not found");
+            return;
+        };
+
+        let posef = helpers::transform_to_posef(&Affine3A {
+            matrix3: hmd.matrix3,
+            translation: pos,
+        });
+
+        line.maybe_line = Some(Line {
             color,
             pose: posef,
-            length: len,
+            width: 0.008,
+            height: 0.008,
         });
     }
 
@@ -173,7 +193,7 @@ impl LinePool {
                     .next()
                     .unwrap();
 
-                line.buf_color.write()?[0..6].copy_from_slice(&COLORS[inner.color]);
+                line.buf_color.write()?[0..6].copy_from_slice(&inner.color);
 
                 let mut cmd_buffer = app
                     .gfx
@@ -205,8 +225,8 @@ impl LinePool {
                     .eye_visibility(xr::EyeVisibility::BOTH)
                     .space(&xr.stage)
                     .size(xr::Extent2Df {
-                        width: LINE_WIDTH,
-                        height: inner.length,
+                        width: inner.width,
+                        height: inner.height,
                     });
 
                 quads.push(CompositionLayer::Quad(quad));
@@ -218,9 +238,10 @@ impl LinePool {
 }
 
 pub(super) struct Line {
-    pub(super) color: usize,
+    pub(super) color: [f32; 6],
     pub(super) pose: xr::Posef,
-    pub(super) length: f32,
+    pub(super) width: f32,
+    pub(super) height: f32,
 }
 
 struct LineContainer {

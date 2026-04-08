@@ -1,4 +1,6 @@
 use glam::Affine3A;
+#[cfg(feature = "tablet")]
+use glam::Vec2;
 use idmap::IdMap;
 use smallvec::{SmallVec, smallvec};
 use std::rc::Rc;
@@ -53,6 +55,8 @@ pub struct AppState {
     pub screens: SmallVec<[ScreenMeta; 8]>,
     pub anchor: Affine3A,
     pub anchor_grabbed: bool,
+    #[cfg(feature = "tablet")]
+    pub tablet_debug: [TabletDebugState; 2],
 
     pub wgui_globals: WguiGlobals,
     pub wgui_theme: Rc<WguiTheme>,
@@ -75,6 +79,27 @@ pub struct AppState {
     pub monado_state: Option<backend::openxr::monado_state::MonadoState>,
 }
 
+#[cfg(feature = "tablet")]
+#[derive(Clone, Copy, Default)]
+pub enum TabletPressureMode {
+    #[default]
+    Trigger,
+    Depth,
+    TriggerFallback,
+}
+
+#[cfg(feature = "tablet")]
+#[derive(Clone, Copy, Default)]
+pub struct TabletDebugState {
+    pub active: bool,
+    pub pressure_mode: TabletPressureMode,
+    pub proximity: bool,
+    pub pressure: f32,
+    pub uv: Option<Vec2>,
+    pub tilt: Vec2,
+    pub depth: Option<f32>,
+}
+
 #[allow(unused_mut)]
 impl AppState {
     pub fn from_graphics(
@@ -93,6 +118,12 @@ impl AppState {
             .ok();
 
         let mut hid_provider = HidWrapper::new();
+
+        #[cfg(feature = "tablet")]
+        if session.config.tablet_mode {
+            hid_provider.tablet_mode = true;
+            hid_provider.init_tablet();
+        }
 
         #[cfg(feature = "osc")]
         let osc_sender = crate::subsystem::osc::OscSender::new(session.config.osc_out_port).ok();
@@ -173,6 +204,8 @@ impl AppState {
             screens: smallvec![],
             anchor: Affine3A::IDENTITY,
             anchor_grabbed: false,
+            #[cfg(feature = "tablet")]
+            tablet_debug: [TabletDebugState::default(), TabletDebugState::default()],
             wgui_globals: WguiGlobals::new(
                 assets,
                 &lang_provider,

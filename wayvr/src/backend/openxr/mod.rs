@@ -52,6 +52,19 @@ struct XrState {
     view: Arc<xr::Space>,
 }
 
+#[cfg(feature = "tablet")]
+fn tablet_dot_color(pressure: f32) -> [f32; 6] {
+    let t = pressure.clamp(0.0, 1.0);
+    let (r, g, b) = if t < 0.5 {
+        let k = t * 2.0;
+        (k, 0.375 + k * 0.625, 0.5 * (1.0 - k))
+    } else {
+        let k = (t - 0.5) * 2.0;
+        (1.0, 1.0 - k, 0.0)
+    };
+    [r, g, b, 1.0, 0.0, 0.0]
+}
+
 #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
 pub fn openxr_run(show_by_default: bool, headless: bool) -> Result<(), BackendError> {
     let (xr_instance, system) = match helpers::init_xr() {
@@ -131,6 +144,11 @@ pub fn openxr_run(show_by_default: bool, headless: bool) -> Result<(), BackendEr
     let mut skybox: Option<Skybox> = None;
 
     let pointer_lines = [
+        lines.allocate(&xr_state, &app)?,
+        lines.allocate(&xr_state, &app)?,
+    ];
+    #[cfg(feature = "tablet")]
+    let pointer_dots = [
         lines.allocate(&xr_state, &app)?,
         lines.allocate(&xr_state, &app)?,
     ];
@@ -266,6 +284,25 @@ pub fn openxr_run(show_by_default: bool, headless: bool) -> Result<(), BackendEr
         app.input_state.pre_update();
         input_source.update(&xr_state, &mut app)?;
         app.input_state.post_update(&app.session);
+        #[cfg(feature = "tablet")]
+        app.hid_provider.update_tablet_buttons(
+            app.input_state
+                .pointers
+                .iter()
+                .any(|p| p.now.click_modifier_middle),
+            app.input_state
+                .pointers
+                .iter()
+                .any(|p| p.before.click_modifier_middle),
+            app.input_state
+                .pointers
+                .iter()
+                .any(|p| p.now.click_modifier_right),
+            app.input_state
+                .pointers
+                .iter()
+                .any(|p| p.before.click_modifier_right),
+        );
 
         if let Some(ref mut blocker) = blocker {
             blocker.update(&mut app);
@@ -292,6 +329,11 @@ pub fn openxr_run(show_by_default: bool, headless: bool) -> Result<(), BackendEr
 
         if let Some(ref mut space_mover) = playspace {
             space_mover.update(&mut overlays, &mut app);
+        }
+
+        #[cfg(feature = "tablet")]
+        if app.hid_provider.tablet_mode {
+            app.tablet_debug.fill(crate::state::TabletDebugState::default());
         }
 
         for o in overlays.values_mut() {
@@ -335,6 +377,19 @@ pub fn openxr_run(show_by_default: bool, headless: bool) -> Result<(), BackendEr
                 line.mode as usize + 1,
                 app.input_state.hmd,
             );
+        }
+        #[cfg(feature = "tablet")]
+        if app.hid_provider.tablet_mode {
+            for (idx, debug) in app.tablet_debug.iter().enumerate() {
+                if debug.active {
+                    lines.draw_dot(
+                        pointer_dots[idx],
+                        app.input_state.pointers[idx].pose.translation,
+                        tablet_dot_color(debug.pressure),
+                        app.input_state.hmd,
+                    );
+                }
+            }
         }
 
         app.hid_provider.inner.commit();

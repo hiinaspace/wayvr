@@ -94,6 +94,14 @@ const fn def_false() -> bool {
 	false
 }
 
+const fn def_tablet_pressure_threshold() -> f32 {
+	0.1
+}
+
+const fn def_tablet_pressure_from_depth() -> bool {
+	false
+}
+
 const fn def_one() -> f32 {
 	1.0
 }
@@ -288,6 +296,19 @@ pub struct GeneralConfig {
 
 	#[serde(default)]
 	pub alt_click_up: Vec<String>,
+
+	/// Enable virtual pen tablet mode: maps the controller laser to absolute stylus position
+	/// and the analog trigger to pressure. Set to true to draw in Krita with pressure.
+	#[serde(default = "def_false")]
+	pub tablet_mode: bool,
+
+	/// Trigger analog threshold below which the pen hovers without drawing (0.0–1.0).
+	#[serde(default = "def_tablet_pressure_threshold")]
+	pub tablet_pressure_threshold: f32,
+
+	/// If true, derive stylus pressure from controller depth into the screen instead of the trigger.
+	#[serde(default = "def_tablet_pressure_from_depth")]
+	pub tablet_pressure_from_depth: bool,
 
 	#[serde(default = "def_timezones")]
 	pub timezones: Vec<String>,

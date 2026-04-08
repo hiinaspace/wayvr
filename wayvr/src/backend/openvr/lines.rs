@@ -150,14 +150,27 @@ impl LinePool {
 
         transform *= rotations[closest.0];
 
-        self.draw_transform(id, transform, self.colors[color]);
+        self.draw_transform(id, transform, 0.002, self.colors[color]);
     }
 
-    fn draw_transform(&mut self, id: usize, transform: Affine3A, color: Vec4) {
+    pub(super) fn draw_dot(&mut self, id: usize, pos: Vec3A, hmd: &Affine3A, color: Vec4) {
+        self.draw_transform(
+            id,
+            Affine3A {
+                matrix3: hmd.matrix3,
+                translation: pos,
+            },
+            0.008,
+            color,
+        );
+    }
+
+    fn draw_transform(&mut self, id: usize, transform: Affine3A, width: f32, color: Vec4) {
         if let Some(data) = self.lines.get_mut(id) {
             let state = data.config.active_state.as_mut().unwrap();
             state.alpha = 1.0;
             state.transform = transform;
+            data.data.width = width;
             data.data.color = color;
         } else {
             log::warn!("Line {id} does not exist");
@@ -179,6 +192,7 @@ impl LinePool {
                     data.config.dirty = false;
                 }
 
+                data.upload_width(overlay);
                 data.upload_transform(universe.clone(), overlay);
                 data.upload_color(overlay);
             }

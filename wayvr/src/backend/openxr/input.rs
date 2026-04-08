@@ -160,6 +160,8 @@ pub(super) struct OpenXrHandSource {
     move_mouse: CustomClickAction,
     scroll: xr::Action<Vector2f>,
     haptics: xr::Action<xr::Haptic>,
+    /// Raw analog trigger value for pen pressure in tablet mode.
+    tablet_pressure: xr::Action<f32>,
 }
 
 impl OpenXrInputSource {
@@ -493,6 +495,12 @@ impl OpenXrPointer {
                 .space_reset
                 .state(pointer.before.space_reset, xr, session)?;
 
+        if let Ok(res) = self.source.tablet_pressure.state(&xr.session, xr::Path::NULL) {
+            if res.is_active {
+                pointer.now.trigger_value = res.current_state;
+            }
+        }
+
         Ok(())
     }
 }
@@ -517,6 +525,12 @@ impl OpenXrHandSource {
             &[],
         )?;
 
+        let action_tablet_pressure = action_set.create_action::<f32>(
+            &format!("{side}_tablet_pressure"),
+            &format!("{side} tablet pressure"),
+            &[],
+        )?;
+
         Ok(Self {
             pose: action_pose,
             click: CustomClickAction::new(action_set, "click", side)?,
@@ -532,6 +546,7 @@ impl OpenXrHandSource {
             modifier_middle: CustomClickAction::new(action_set, "click_modifier_middle", side)?,
             move_mouse: CustomClickAction::new(action_set, "move_mouse", side)?,
             haptics: action_haptics,
+            tablet_pressure: action_tablet_pressure,
         })
     }
 }
@@ -709,6 +724,8 @@ fn suggest_bindings(instance: &xr::Instance, hands: &[&OpenXrHandSource; 3]) {
 
         add_custom!(profile.move_mouse, move_mouse, hands, bindings, instance);
 
+        add_custom_lr!(profile.tablet_pressure, tablet_pressure, hands, bindings, instance);
+
         if instance
             .suggest_interaction_profile_bindings(profile_path, &bindings)
             .is_err()
@@ -758,6 +775,7 @@ struct OpenXrActionConfProfile {
     move_mouse: Option<OpenXrActionConfAction>,
     scroll: Option<OpenXrActionConfAction>,
     haptic: Option<OpenXrActionConfAction>,
+    tablet_pressure: Option<OpenXrActionConfAction>,
 }
 
 const DEFAULT_PROFILES: &str = include_str!("openxr_actions.json5");

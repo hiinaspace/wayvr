@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::{Result, anyhow};
+use glam::Vec4;
 use ovr_overlay::{
     TrackedDeviceIndex,
     sys::{ETrackedDeviceProperty, EVRApplicationType, EVREventType},
@@ -45,6 +46,18 @@ pub mod lines;
 pub mod manifest;
 pub mod overlay;
 pub mod playspace;
+
+#[cfg(feature = "tablet")]
+fn tablet_dot_color(pressure: f32) -> Vec4 {
+    let t = pressure.clamp(0.0, 1.0);
+    if t < 0.5 {
+        let k = t * 2.0;
+        Vec4::new(k, 0.375 + k * 0.625, 0.5 * (1.0 - k), 1.0)
+    } else {
+        let k = (t - 0.5) * 2.0;
+        Vec4::new(1.0, 1.0 - k, 0.0, 1.0)
+    }
+}
 
 pub fn openvr_uninstall() {
     let app_type = EVRApplicationType::VRApplication_Overlay;
@@ -139,6 +152,8 @@ pub fn openvr_run(show_by_default: bool, headless: bool) -> Result<(), BackendEr
 
     let mut lines = LinePool::new(app.gfx.clone())?;
     let pointer_lines = [lines.allocate(), lines.allocate()];
+    #[cfg(feature = "tablet")]
+    let pointer_dots = [lines.allocate(), lines.allocate()];
     let mut current_lines = Vec::with_capacity(2);
 
     'main_loop: loop {
@@ -240,6 +255,25 @@ pub fn openvr_run(show_by_default: bool, headless: bool) -> Result<(), BackendEr
         app.input_state.pre_update();
         input_source.update(universe.clone(), &mut input_mgr, &mut system_mgr, &mut app);
         app.input_state.post_update(&app.session);
+        #[cfg(feature = "tablet")]
+        app.hid_provider.update_tablet_buttons(
+            app.input_state
+                .pointers
+                .iter()
+                .any(|p| p.now.click_modifier_middle),
+            app.input_state
+                .pointers
+                .iter()
+                .any(|p| p.before.click_modifier_middle),
+            app.input_state
+                .pointers
+                .iter()
+                .any(|p| p.now.click_modifier_right),
+            app.input_state
+                .pointers
+                .iter()
+                .any(|p| p.before.click_modifier_right),
+        );
 
         if app
             .input_state
@@ -265,6 +299,11 @@ pub fn openvr_run(show_by_default: bool, headless: bool) -> Result<(), BackendEr
 
         playspace.update(&mut chaperone_mgr, &mut overlays, &app);
 
+        #[cfg(feature = "tablet")]
+        if app.hid_provider.tablet_mode {
+            app.tablet_debug.fill(crate::state::TabletDebugState::default());
+        }
+
         current_lines.clear();
 
         let haptics = interact(&mut overlays, &mut app, &mut current_lines);
@@ -273,6 +312,7 @@ pub fn openvr_run(show_by_default: bool, headless: bool) -> Result<(), BackendEr
                 input_source.haptics(&mut input_mgr, idx, haptics);
             }
         }
+        lines.reset();
         for (idx, line) in current_lines.iter().enumerate() {
             lines.draw_between(
                 pointer_lines[idx],
@@ -281,6 +321,19 @@ pub fn openvr_run(show_by_default: bool, headless: bool) -> Result<(), BackendEr
                 line.mode as usize + 1,
                 &app.input_state.hmd,
             );
+        }
+        #[cfg(feature = "tablet")]
+        if app.hid_provider.tablet_mode {
+            for (idx, debug) in app.tablet_debug.iter().enumerate() {
+                if debug.active {
+                    lines.draw_dot(
+                        pointer_dots[idx],
+                        app.input_state.pointers[idx].pose.translation,
+                        &app.input_state.hmd,
+                        tablet_dot_color(debug.pressure),
+                    );
+                }
+            }
         }
 
         app.hid_provider.inner.commit();

@@ -192,7 +192,7 @@ impl OverlayWindowData<OpenVrOverlayData> {
         }
     }
 
-    fn upload_width(&self, overlay: &mut OverlayManager) {
+    pub(super) fn upload_width(&self, overlay: &mut OverlayManager) {
         let Some(handle) = self.data.handle else {
             log::debug!("{}: No overlay handle", self.config.name);
             return;

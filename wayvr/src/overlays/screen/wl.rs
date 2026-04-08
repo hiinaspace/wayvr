@@ -149,10 +149,8 @@ pub fn create_screens_wayland(wl: &mut WlxClient, app: &mut AppState) -> ScreenC
     let origin = wl.get_desktop_origin();
 
     app.hid_provider
-        .inner
         .set_desktop_extent(vec2(extent.0 as f32, extent.1 as f32));
     app.hid_provider
-        .inner
         .set_desktop_origin(vec2(origin.0 as f32, origin.1 as f32));
 
     ScreenCreateData { screens }

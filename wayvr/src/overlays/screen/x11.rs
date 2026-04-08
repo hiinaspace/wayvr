@@ -129,8 +129,8 @@ pub fn create_screens_x11pw(app: &mut AppState) -> anyhow::Result<ScreenCreateDa
         })
         .collect();
 
-    app.hid_provider.inner.set_desktop_extent(extent);
-    app.hid_provider.inner.set_desktop_origin(vec2(0.0, 0.0));
+    app.hid_provider.set_desktop_extent(extent);
+    app.hid_provider.set_desktop_origin(vec2(0.0, 0.0));
 
     Ok(ScreenCreateData { screens })
 }
@@ -212,8 +212,8 @@ pub fn create_screens_xshm(app: &mut AppState) -> anyhow::Result<ScreenCreateDat
         })
         .collect();
 
-    app.hid_provider.inner.set_desktop_extent(extent);
-    app.hid_provider.inner.set_desktop_origin(vec2(0.0, 0.0));
+    app.hid_provider.set_desktop_extent(extent);
+    app.hid_provider.set_desktop_origin(vec2(0.0, 0.0));
 
     Ok(ScreenCreateData { screens })
 }

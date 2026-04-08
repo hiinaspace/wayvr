@@ -16,6 +16,8 @@ use crate::{
     gui::panel::{log_invalid_attrib, log_missing_attrib},
     state::AppState,
 };
+#[cfg(feature = "tablet")]
+use crate::state::TabletPressureMode;
 
 #[allow(clippy::too_many_lines)]
 pub(super) fn setup_custom_label<S: 'static>(
@@ -162,6 +164,11 @@ pub(super) fn setup_custom_label<S: 'static>(
             ipd_on_tick(common, data, app);
             Ok(EventResult::Pass)
         }),
+        #[cfg(feature = "tablet")]
+        "tablet_status" => Box::new(|common, data, app, _| {
+            tablet_status_on_tick(common, data, app);
+            Ok(EventResult::Pass)
+        }),
         unk => {
             log_invalid_attrib(parser_state, TAG, "_source", unk);
             return;
@@ -281,5 +288,57 @@ fn ipd_on_tick(
 ) {
     let text = app.input_state.ipd.to_string();
     let label = data.obj.get_as_mut::<WidgetLabel>().unwrap();
+    label.set_text(common, Translation::from_raw_text(&text));
+}
+
+fn tablet_status_on_tick(
+    common: &mut event::CallbackDataCommon,
+    data: &mut event::CallbackData,
+    app: &AppState,
+) {
+    let label = data.obj.get_as_mut::<WidgetLabel>().unwrap();
+
+    if !app.session.config.tablet_mode {
+        label.set_text(common, Translation::default());
+        return;
+    }
+
+    let text = app
+        .tablet_debug
+        .iter()
+        .enumerate()
+        .map(|(idx, state)| {
+            let hand = if idx == 0 { "L" } else { "R" };
+            if !state.active {
+                return format!("{hand} off");
+            }
+            let pointer = &app.input_state.pointers[idx];
+            let mode = match state.pressure_mode {
+                TabletPressureMode::Trigger => "trig",
+                TabletPressureMode::Depth => "depth",
+                TabletPressureMode::TriggerFallback => "curve",
+            };
+            let uv = state
+                .uv
+                .map(|uv| format!("{:.2},{:.2}", uv.x, uv.y))
+                .unwrap_or_else(|| "--,--".into());
+            let depth = state
+                .depth
+                .map(|depth| format!("{depth:+.3}m"))
+                .unwrap_or_else(|| "--".into());
+            format!(
+                "{hand} {} prox={} p={:.2} uv={uv} tilt={:+.0}/{:+.0} depth={depth} btn={}/{}",
+                mode,
+                if state.proximity { 1 } else { 0 },
+                state.pressure,
+                state.tilt.x,
+                state.tilt.y,
+                if pointer.now.click_modifier_middle { 1 } else { 0 },
+                if pointer.now.click_modifier_right { 1 } else { 0 },
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
     label.set_text(common, Translation::from_raw_text(&text));
 }

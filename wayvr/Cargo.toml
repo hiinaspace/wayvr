@@ -95,7 +95,8 @@ xkbcommon = { version = "0.8.0" }  # 0.9.0 breaks keymap import on some distros
 regex.workspace = true
 
 [features]
-default = ["openvr", "openxr", "osc", "wayland", "x11"]
+default = ["openvr", "openxr", "osc", "wayland", "x11", "tablet"]
+tablet = []
 as-raw-xcb-connection = []
 feat-monado-metrics = []
 openvr = ["dep:json", "dep:ovr_overlay"]

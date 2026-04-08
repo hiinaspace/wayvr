@@ -145,6 +145,17 @@
           </div>
         </rectangle>
 
+        <rectangle macro="decorative_rect" padding="10" min_width="360" max_width="420">
+          <label
+            _source="tablet_status"
+            text=""
+            width="100%"
+            wrap="1"
+            size="14"
+            color="~color_text"
+            weight="bold" />
+        </rectangle>
+
         <!-- Bottom buttons -->
         <div flex_direction="row" gap="8">
           <div gap="4">
