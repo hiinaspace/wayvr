@@ -26,6 +26,7 @@
           pipewire.dev
           dav1d.dev
           systemdLibs.dev # libudev
+          libinput.dev
           openvr
 
           # X11 (for the x11 feature)

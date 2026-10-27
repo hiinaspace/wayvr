@@ -38,12 +38,12 @@ use crate::{
     },
 };
 
+mod background_owner;
 mod blocker;
 mod helpers;
 mod input;
 mod lines;
 pub mod monado_state;
-mod background_owner;
 mod overlay;
 mod playspace;
 mod skybox;
@@ -429,7 +429,10 @@ pub fn openxr_run(args: &Args, params: RunParams) -> Result<(), BackendError> {
         // Begin rendering
         let mut futures = GpuFutures::default();
 
-        if !main_session_visible && !background_owner.active && let Some(skybox) = skybox.as_mut() {
+        if !main_session_visible
+            && !background_owner.active
+            && let Some(skybox) = skybox.as_mut()
+        {
             skybox.render(&xr_state, &app, &mut futures)?;
         }
 
@@ -487,7 +490,10 @@ pub fn openxr_run(args: &Args, params: RunParams) -> Result<(), BackendError> {
 
         // Layer composition
         let mut layers = vec![];
-        if !main_session_visible && !background_owner.active && let Some(skybox) = skybox.as_mut() {
+        if !main_session_visible
+            && !background_owner.active
+            && let Some(skybox) = skybox.as_mut()
+        {
             for (idx, layer) in skybox.present(&xr_state, &app)?.into_iter().enumerate() {
                 layers.push(((idx as f32).mul_add(-50.0, 200.0), layer));
             }

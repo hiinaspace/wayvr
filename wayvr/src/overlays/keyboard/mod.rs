@@ -55,6 +55,8 @@ mod layout;
 mod prediction_bar;
 
 #[cfg(feature = "swipe-to-type")]
+mod swipe_engine;
+#[cfg(feature = "swipe-to-type")]
 mod swipe_type;
 
 #[cfg(not(feature = "swipe-to-type"))]

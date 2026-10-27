@@ -1,4 +1,5 @@
 use super::layout::KeyCapType;
+use super::swipe_engine::{self, RawSwipePoint, SwipeEngines};
 use crate::state::AppState;
 use crate::subsystem::clipboard;
 use crate::subsystem::clipboard::ClipboardProvider;
@@ -13,9 +14,7 @@ use std::sync::mpsc::{Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
-use super_swipe_type::SwipePoint;
 use super_swipe_type::keyboard_manager::QwertyKeyboardGrid;
-use super_swipe_type::swipe_orchestrator::SwipeOrchestrator;
 use wgui::event::{DeviceBitmask, MouseButtonIndex};
 use wgui::log::LogErr;
 
@@ -23,7 +22,7 @@ const PREDICTION_SUGGESTION_COUNT: usize = 5;
 
 enum PredictionTask {
     Predict {
-        swipe: Vec<SwipePoint>,
+        swipe: Vec<RawSwipePoint>,
         last_word: Option<String>,
     },
     Shutdown,
@@ -69,7 +68,7 @@ impl Default for PredictionSlot {
 
 pub struct SwipeTypingManager {
     keyboard_gird: QwertyKeyboardGrid,
-    current_swipe: Vec<SwipePoint>,
+    current_swipe: Vec<RawSwipePoint>,
     prediction_slot: PredictionSlot,
     prediction_task_sender: Sender<PredictionTask>,
     worker_thread: Option<JoinHandle<()>>,
@@ -100,6 +99,7 @@ impl SwipeTypingManager {
         original_keyboard_mods: KeyModifier,
     ) {
         self.last_swiped_word = Some(word.clone());
+        swipe_engine::log_selection(word);
         let text_to_paste = format!("{word} ");
 
         match app.hid_provider.get_input_focus() {
@@ -146,23 +146,16 @@ impl SwipeTypingManager {
 
         // Spawn persistent worker thread
         let worker_thread = thread::spawn(move || {
-            let mut swipe_engine = match SwipeOrchestrator::new_from_path(&model_path) {
-                Ok(engine) => engine,
-                Err(e) => {
-                    log::error!("Failed to initialize SwipeOrchestrator: {e}");
-                    return;
-                }
-            };
+            let mut engines = SwipeEngines::new(&model_path);
 
             while let Ok(task) = task_receiver.recv() {
                 match task {
                     PredictionTask::Predict { swipe, last_word } => {
-                        match swipe_engine.predict(swipe, &last_word) {
+                        match engines.predict(&swipe, &last_word) {
                             Ok(candidates) => {
                                 let words: Vec<String> = candidates
                                     .into_iter()
                                     .take(PREDICTION_SUGGESTION_COUNT)
-                                    .map(|c| c.word)
                                     .collect();
 
                                 worker_slot.set(Some(words));
@@ -357,10 +350,10 @@ impl SwipeTypingManager {
         device: DeviceBitmask,
         index: Option<MouseButtonIndex>,
     ) {
-        if let Some(pos) = self
+        if self
             .keyboard_gird
             .key_positions
-            .get(&key_label.to_ascii_lowercase())
+            .contains_key(&key_label.to_ascii_lowercase())
         {
             if let Some(current_device) = self.current_swipe_device
                 && current_device != device
@@ -374,29 +367,17 @@ impl SwipeTypingManager {
                 self.swipe_left_first_key = true;
             }
 
-            let key_pos = Vec2 {
-                x: pos.x as f32,
-                y: pos.y as f32,
-            };
-
             let start_time = match self.swipe_start_time {
                 Some(time) => time,
                 None => self.start_swipe(key_label, device, index),
             };
 
-            let within_key_pos_from_center = Vec2 {
-                x: within_key_pos_normalized.x - 0.5,
-                y: within_key_pos_normalized.y - 0.5,
-            };
-            let key_dimensions = Vec2 {
-                x: QwertyKeyboardGrid::get_key_width() as f32,
-                y: QwertyKeyboardGrid::get_key_height() as f32,
-            };
-
-            let point = within_key_pos_from_center * key_dimensions + key_pos;
-            let duration = Instant::now().duration_since(start_time).mul_f32(0.8); // multiply by .8 because library is trained on mobile swipes which happen on a smaller keyboard and are faster
-            self.current_swipe
-                .push(SwipePoint::new(point.x.into(), point.y.into(), duration));
+            // Engines map key + offset into their own layout frames.
+            self.current_swipe.push(RawSwipePoint {
+                key: key_label.to_ascii_lowercase(),
+                within_key: *within_key_pos_normalized,
+                elapsed: Instant::now().duration_since(start_time),
+            });
         }
     }
 }
