@@ -102,69 +102,81 @@ impl SwipeEngines {
         }
     }
 
-    /// Returns the primary engine's words, best first.
+    /// Runs the primary engine and hands its words (best first) to `publish`
+    /// right away. Only then, if logging, runs the other engine and writes
+    /// the comparison line, so the slower engine never delays suggestions.
     pub fn predict(
         &mut self,
         swipe: &[RawSwipePoint],
         last_word: &Option<String>,
-    ) -> anyhow::Result<Vec<String>> {
-        let mut clever_out = None;
-        let mut futo_out = None;
-
-        if let Some(ck) = self.cleverkeys.as_mut()
-            && (self.primary == EngineKind::CleverKeys || self.log.is_some())
-        {
-            let start = Instant::now();
-            clever_out = Some((ck.predict(swipe, last_word), start.elapsed()));
-        }
-        if let Some(futo) = self.futo.as_ref()
-            && (self.primary == EngineKind::Futo || self.log.is_some())
-        {
-            let start = Instant::now();
-            futo_out = Some((futo.predict(swipe, last_word), start.elapsed()));
-        }
-
-        if let Some(path) = self.log.as_deref() {
-            let result_json = |r: &Option<(anyhow::Result<Vec<String>>, Duration)>| match r {
-                Some((Ok(words), t)) => {
-                    serde_json::json!({ "words": words, "ms": t.as_secs_f64() * 1000.0 })
-                }
-                Some((Err(e), _)) => serde_json::json!({ "error": format!("{e:#}") }),
-                None => serde_json::Value::Null,
-            };
-            let points: Vec<_> = swipe
-                .iter()
-                .map(|p| {
-                    serde_json::json!([
-                        p.key.to_string(),
-                        p.within_key.x,
-                        p.within_key.y,
-                        p.elapsed.as_secs_f64() * 1000.0
-                    ])
-                })
-                .collect();
-            append_log(
-                path,
-                &serde_json::json!({
-                    "type": "swipe",
-                    "at": unix_ms(),
-                    "primary": self.primary.name(),
-                    "last_word": last_word,
-                    "points": points,
-                    "cleverkeys": result_json(&clever_out),
-                    "futo": result_json(&futo_out),
-                }),
-            );
-        }
-
-        let primary = match self.primary {
-            EngineKind::CleverKeys => clever_out,
-            EngineKind::Futo => futo_out,
-        };
+        publish: impl FnOnce(anyhow::Result<Vec<String>>),
+    ) {
+        let primary = self.run(self.primary, swipe, last_word);
+        let primary_json = primary.as_ref().map(result_json);
         match primary {
-            Some((result, _)) => result,
-            None => bail!("{} swipe engine unavailable", self.primary.name()),
+            Some((result, _)) => publish(result),
+            None => publish(Err(anyhow::anyhow!(
+                "{} swipe engine unavailable",
+                self.primary.name()
+            ))),
         }
+
+        let Some(path) = self.log.clone() else {
+            return;
+        };
+        let other = match self.primary {
+            EngineKind::CleverKeys => EngineKind::Futo,
+            EngineKind::Futo => EngineKind::CleverKeys,
+        };
+        let other_json = self.run(other, swipe, last_word).as_ref().map(result_json);
+        let (clever_json, futo_json) = match self.primary {
+            EngineKind::CleverKeys => (primary_json, other_json),
+            EngineKind::Futo => (other_json, primary_json),
+        };
+        let points: Vec<_> = swipe
+            .iter()
+            .map(|p| {
+                serde_json::json!([
+                    p.key.to_string(),
+                    p.within_key.x,
+                    p.within_key.y,
+                    p.elapsed.as_secs_f64() * 1000.0
+                ])
+            })
+            .collect();
+        append_log(
+            &path,
+            &serde_json::json!({
+                "type": "swipe",
+                "at": unix_ms(),
+                "primary": self.primary.name(),
+                "last_word": last_word,
+                "points": points,
+                "cleverkeys": clever_json,
+                "futo": futo_json,
+            }),
+        );
+    }
+
+    fn run(
+        &mut self,
+        kind: EngineKind,
+        swipe: &[RawSwipePoint],
+        last_word: &Option<String>,
+    ) -> Option<(anyhow::Result<Vec<String>>, Duration)> {
+        let start = Instant::now();
+        let result = match kind {
+            EngineKind::CleverKeys => self.cleverkeys.as_mut()?.predict(swipe, last_word),
+            EngineKind::Futo => self.futo.as_ref()?.predict(swipe, last_word),
+        };
+        Some((result, start.elapsed()))
+    }
+}
+
+fn result_json((result, elapsed): &(anyhow::Result<Vec<String>>, Duration)) -> serde_json::Value {
+    match result {
+        Ok(words) => serde_json::json!({ "words": words, "ms": elapsed.as_secs_f64() * 1000.0 }),
+        Err(e) => serde_json::json!({ "error": format!("{e:#}") }),
     }
 }
 

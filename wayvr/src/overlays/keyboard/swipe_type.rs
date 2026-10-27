@@ -151,7 +151,7 @@ impl SwipeTypingManager {
             while let Ok(task) = task_receiver.recv() {
                 match task {
                     PredictionTask::Predict { swipe, last_word } => {
-                        match engines.predict(&swipe, &last_word) {
+                        engines.predict(&swipe, &last_word, |result| match result {
                             Ok(candidates) => {
                                 let words: Vec<String> = candidates
                                     .into_iter()
@@ -163,7 +163,7 @@ impl SwipeTypingManager {
                             Err(e) => {
                                 log::error!("Prediction failed: {e}");
                             }
-                        }
+                        });
                     }
                     PredictionTask::Shutdown => break,
                 }
