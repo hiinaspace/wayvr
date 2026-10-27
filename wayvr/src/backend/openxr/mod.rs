@@ -43,6 +43,7 @@ mod helpers;
 mod input;
 mod lines;
 pub mod monado_state;
+mod background_owner;
 mod overlay;
 mod playspace;
 mod skybox;
@@ -50,13 +51,23 @@ mod swapchain;
 
 const VIEW_TYPE: xr::ViewConfigurationType = xr::ViewConfigurationType::PRIMARY_STEREO;
 
+fn teardown_step<T>(name: &str, value: T) {
+    let start = Instant::now();
+    log::info!("Teardown: dropping {name}");
+    drop(value);
+    log::info!("Teardown: dropped {name} in {:?}", start.elapsed());
+}
+
 struct XrState {
-    instance: xr::Instance,
-    session: xr::Session<xr::Vulkan>,
-    predicted_display_time: xr::Time,
-    fps: f32,
+    // Rust drops fields in declaration order. OpenXR child handles must be
+    // destroyed before their parent session, and the session before its
+    // instance.
     stage: Arc<xr::Space>,
     view: Arc<xr::Space>,
+    session: xr::Session<xr::Vulkan>,
+    instance: xr::Instance,
+    predicted_display_time: xr::Time,
+    fps: f32,
     extra_exts: ExtraExts,
 }
 
@@ -172,6 +183,7 @@ pub fn openxr_run(args: &Args, params: RunParams) -> Result<(), BackendError> {
     let mut fps_counter: VecDeque<Instant> = VecDeque::new();
 
     let mut main_session_visible = false;
+    let mut background_owner = background_owner::BackgroundOwner::default();
     let mut environment_blend_mode = modes[0];
     let mut last_frame_time = Instant::now();
     let mut retired_swapchains = SwapchainRetirementQueue::default();
@@ -268,6 +280,8 @@ pub fn openxr_run(args: &Args, params: RunParams) -> Result<(), BackendError> {
             }
             next_device_update = Instant::now() + Duration::from_secs(30);
         }
+
+        background_owner.update(app.monado_state.as_mut());
 
         if !session_running {
             std::thread::sleep(Duration::from_millis(100));
@@ -415,7 +429,7 @@ pub fn openxr_run(args: &Args, params: RunParams) -> Result<(), BackendError> {
         // Begin rendering
         let mut futures = GpuFutures::default();
 
-        if !main_session_visible && let Some(skybox) = skybox.as_mut() {
+        if !main_session_visible && !background_owner.active && let Some(skybox) = skybox.as_mut() {
             skybox.render(&xr_state, &app, &mut futures)?;
         }
 
@@ -473,7 +487,7 @@ pub fn openxr_run(args: &Args, params: RunParams) -> Result<(), BackendError> {
 
         // Layer composition
         let mut layers = vec![];
-        if !main_session_visible && let Some(skybox) = skybox.as_mut() {
+        if !main_session_visible && !background_owner.active && let Some(skybox) = skybox.as_mut() {
             for (idx, layer) in skybox.present(&xr_state, &app)?.into_iter().enumerate() {
                 layers.push(((idx as f32).mul_add(-50.0, 200.0), layer));
             }
@@ -589,6 +603,24 @@ pub fn openxr_run(args: &Args, params: RunParams) -> Result<(), BackendError> {
         save_settings(&app.session.config)?;
         app.session.config_dirty = false;
     }
+
+    // These all own handles or Vulkan resources associated with xr_state's
+    // session. They were declared before xr_state, so the default reverse local
+    // drop order would otherwise destroy the parent session first.
+    // Drain GPU work first, as upstream's OpenXrGpuIdleGuard intends.
+    teardown_step("gpu_idle", _gpu_idle_before_xr_drop);
+    teardown_step("input_source", input_source);
+    let _ = pointer_lines;
+    teardown_step("skybox", skybox);
+    teardown_step("delete_queue", delete_queue);
+    teardown_step("current_lines", current_lines);
+    teardown_step("lines", lines);
+    teardown_step("overlays", overlays);
+    teardown_step("playspace_mover", playspace_mover);
+    teardown_step("frame_stream", frame_stream);
+    teardown_step("frame_wait", frame_wait);
+    teardown_step("xr_state", xr_state);
+    teardown_step("app", app);
 
     Ok(())
 }

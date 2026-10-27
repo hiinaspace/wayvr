@@ -1,0 +1,25 @@
+[Unit]
+Description=WayVR debug build
+After=monado.service
+BindsTo=monado.service
+Requires=monado.socket
+Requires=graphical-session.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/s/code/wayvr
+Environment=WAYVR_LOGFILE=/dev/null
+Environment=RUST_BACKTRACE=1
+# The user manager loses the compositor socket name across suspend. Niri owns
+# wayland-1, so keep WayVR on the session compositor when it is restarted.
+Environment=WAYLAND_DISPLAY=wayland-1
+# Permit a same-user debugger to attach despite kernel.yama.ptrace_scope=1.
+# This is intentionally scoped to the diagnostic build.
+Environment=WAYVR_ALLOW_PTRACE=1
+ExecStart=/home/s/code/wayvr/target/debug/wayvr --replace --openxr
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=10s
+
+[Install]
+WantedBy=monado.service

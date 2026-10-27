@@ -159,6 +159,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     logging_init(&mut args);
 
+    if std::env::var_os("WAYVR_ALLOW_PTRACE").is_some() {
+        // Diagnostic opt-in for attaching to a systemd-launched process when
+        // kernel.yama.ptrace_scope=1. This affects only this process.
+        let result =
+            unsafe { libc::prctl(libc::PR_SET_PTRACER, libc::PR_SET_PTRACER_ANY, 0, 0, 0) };
+        if result == 0 {
+            log::warn!("Debugger attachment enabled by WAYVR_ALLOW_PTRACE");
+        } else {
+            log::error!(
+                "Could not enable debugger attachment: {}",
+                std::io::Error::last_os_error()
+            );
+        }
+    }
+
     log::info!(
         "Welcome to {} version {}!{}",
         env!("CARGO_PKG_NAME"),
