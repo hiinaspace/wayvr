@@ -250,6 +250,7 @@ impl DashInterface<()> for DashInterfaceEmulated {
 			monado: true,
 			passthru: false,
 			whisper: true,
+			swipe_to_type: true,
 		}
 	}
 
