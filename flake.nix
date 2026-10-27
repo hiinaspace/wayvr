@@ -24,6 +24,8 @@
           openssl.dev
           openxr-loader.dev
           pipewire.dev
+          dav1d.dev
+          systemdLibs.dev # libudev
           openvr
 
           # X11 (for the x11 feature)
@@ -37,6 +39,10 @@
           shaderc.dev      # headers + pkg-config for shaderc
           shaderc.static   # libshaderc_combined.a (Rust shaderc crate links this)
           clang            # needed by rust-bindgen (input-linux, libmonado-rs)
+          cmake            # whisper-rs-sys (default "whisper" feature)
+          shaderc          # glslc for GGML_VULKAN
+          vulkan-headers
+          vulkan-loader
         ];
 
         shellHook = ''
